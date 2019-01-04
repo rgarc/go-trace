@@ -408,11 +408,57 @@ func schlick(cosine float32, ref_idx float32) float32 {
   return r0 + (1.0 - r0) * float32(math.Pow(float64(1.0 - cosine), 5.0))
 }
 
+func random_scene() HitableList {
+  var world HitableList
+
+  world = append(world, sphere(vec3(0, -1000, 0), 1000, lambertian(0.5, 0.5, 0.5)))
+
+  for a := -11; a < 11; a++ {
+    for b := -11; b < 11; b++ {
+      mat_prob := rand.Float32()
+      center := vec3(float32(a) + 0.9 * rand.Float32(), 0.2, float32(b) + 0.9 * rand.Float32())
+
+      if center.sub(vec3(4, 0.2, 0)).norm() > 0.9 {
+        if mat_prob < 0.8 {
+          world = append(world, sphere(center, 0.2, lambertian(
+            rand.Float32() * rand.Float32(),
+            rand.Float32() * rand.Float32(),
+            rand.Float32() * rand.Float32())))
+        } else if mat_prob < 0.95 {
+          world = append(world, sphere(center, 0.2, metal(
+            0.5 * (1 + rand.Float32()),
+            0.5 * (1 + rand.Float32()),
+            0.5 * (1 + rand.Float32()),
+            0.5 * (1 + rand.Float32()),
+          )))
+        } else {
+          world = append(world, sphere(center, 0.2, dielectric(1.5)))
+        }
+      }
+    }
+  }
+
+  world = append(world, sphere(vec3(0, 1, 0), 1.0, dielectric(1.5)))
+  world = append(world, sphere(vec3(-4, 1, 0), 1.0, lambertian(0.4, 0.2, 0.1)))
+  world = append(world, sphere(vec3(4, 1, 0), 1.0, metal(0.7, 0.6, 0.5, 0.0)))
+  return world
+}
+
+func basic_scene() HitableList {
+  var world HitableList
+  world = append(world, sphere(vec3(0, 0, -1), 0.5, lambertian(0.1, 0.2, 0.5)))
+  world = append(world, sphere(vec3(0, -100.5, -1), 100, lambertian(0.8, 0.8, 0.0)))
+  world = append(world, sphere(vec3(1, 0, -1), 0.5, metal(0.8, 0.6, 0.2, 0.0)))
+  world = append(world, sphere(vec3(-1, 0, -1), 0.5, dielectric(1.5)))
+  world = append(world, sphere(vec3(-1, 0, -1), -0.45, dielectric(1.5)))
+  return world
+}
+
 
 func main() {
-  nx := 400
-  ny := 200
-  ns := 50
+  nx := 200
+  ny := 100
+  ns := 100
 
   fmt.Print("P3\n", nx, " ", ny, "\n255\n")
 
@@ -428,13 +474,7 @@ func main() {
     vertical: vertical,
   }
 
-  var world HitableList
-
-  world = append(world, sphere(vec3(0, 0, -1), 0.5, lambertian(0.1, 0.2, 0.5)))
-  world = append(world, sphere(vec3(0, -100.5, -1), 100, lambertian(0.8, 0.8, 0.0)))
-  world = append(world, sphere(vec3(1, 0, -1), 0.5, metal(0.8, 0.6, 0.2, 0.0)))
-  world = append(world, sphere(vec3(-1, 0, -1), 0.5, dielectric(1.5)))
-  world = append(world, sphere(vec3(-1, 0, -1), -0.45, dielectric(1.5)))
+  world := basic_scene()
 
   for j := ny - 1; j >= 0; j-- {
     for i := 0; i < nx; i++ {
