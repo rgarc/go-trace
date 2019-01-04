@@ -4,6 +4,7 @@ import (
 	"fmt"
   "math"
   "math/rand"
+  "sync"
 )
 
 /**
@@ -123,7 +124,7 @@ func color(r Ray, world Hitable, depth int) Vec3 {
     scattered := ray(vec3(0, 0, 0), vec3(0, 0, 0))
     attenuation := vec3(0, 0, 0)
 
-    if (depth < 50 && rec.material.scatter(r, &rec, &attenuation, &scattered)) {
+    if (depth < 5 && rec.material.scatter(r, &rec, &attenuation, &scattered)) {
       return attenuation.prod(color(scattered, world, depth + 1))
     } else {
       return vec3(0, 0, 0)
@@ -515,10 +516,10 @@ func pos_camera_scene() HitableList {
 
 
 func main() {
-  scale := 0.5
+  scale := 2.0
   nx := int(200 * scale)
   ny := int(100 * scale)
-  ns := 1
+  ns := 50
 
   fmt.Print("P3\n", nx, " ", ny, "\n255\n")
 
@@ -532,25 +533,50 @@ func main() {
 
   world := random_scene()
 
+  buf := make([][]Vec3, ny)
+
+  for i := range buf {
+    buf[i] = make([]Vec3, nx)
+  }
+
+
+  var wg sync.WaitGroup
+
+  wg.Add(ny * nx)
+
+
   for j := ny - 1; j >= 0; j-- {
     for i := 0; i < nx; i++ {
-      col := vec3(0, 0, 0)
+      go func(i ,j int, buf *[][]Vec3) {
+        defer wg.Done()
+        col := vec3(0, 0, 0)
 
-      for s := 0; s < ns; s++ {
-        u := (float32(i) + rand.Float32()) / float32(nx);
-        v := (float32(j) + rand.Float32()) / float32(ny);
-        r := cam.get_ray(u, v)
-        col = col.add(color(r, world, 0))
-      }
+        for s := 0; s < ns; s++ {
+          u := (float32(i) + rand.Float32()) / float32(nx);
+          v := (float32(j) + rand.Float32()) / float32(ny);
+          r := cam.get_ray(u, v)
+          col = col.add(color(r, world, 0))
+        }
 
-      col = col.scalar_mult(1.0 / float32(ns)).gamma(2.0)
+        col = col.scalar_mult(1.0 / float32(ns)).gamma(2.0)
 
-      ir := int(255.99 * col.x());
-      ig := int(255.99 * col.y());
-      ib := int(255.99 * col.z());
+        ir := float32(255.99 * col.x());
+        ig := float32(255.99 * col.y());
+        ib := float32(255.99 * col.z());
 
-      fmt.Print(ir, " ", ig, " ", ib, "\n")
+        (*buf)[j][i] = vec3(ir, ig, ib)
+      }(i, j, &buf)
     }
   }
 
+  wg.Wait()
+
+  for j := ny - 1; j >= 0; j-- {
+    for i := 0; i < nx; i++ {
+      color := buf[j][i]
+      fmt.Print(int(color.r()), " ",
+                int(color.g()), " ",
+                int(color.b()), "\n")
+    }
+  }
 }
