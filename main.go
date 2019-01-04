@@ -79,7 +79,7 @@ func (v Vec3) cross(other Vec3) Vec3 {
   return Vec3 {
     e: [3]float32 {
       v.e[1] * other.e[2] - v.e[2] * other.e[1],
-      -v.e[0] * other.e[2] - v.e[2] * other.e[0],
+      -v.e[0] * other.e[2] + v.e[2] * other.e[0],
       v.e[0] * other.e[1] - v.e[1] * other.e[0],
     },
   }
@@ -264,6 +264,16 @@ func random_sphere_point() Vec3 {
   return p
 }
 
+func random_disk_point() Vec3 {
+  p := vec3(1, 1, 1)
+
+  for p.r2() >= 1.0 {
+    p = vec3(rand.Float32(), rand.Float32(), 0).scalar_mult(2.0).sub(vec3(1, 1, 0))
+  }
+
+  return p
+}
+
 type Sphere struct {
   center Vec3
   radius float32
@@ -276,31 +286,52 @@ type Camera struct {
   origin,
   lower_left_corner,
   horizontal,
-  vertical Vec3
+  vertical,
+  u, v, w Vec3
+  lens_radius float32
 }
 
-func (c Camera) get_ray(u, v float32) Ray {
+func (c Camera) get_ray(s, t float32) Ray {
+  rd := random_disk_point().scalar_mult(c.lens_radius)
+  offset := c.u.scalar_mult(rd.x()).add(c.v.scalar_mult(rd.y()))
+
+  direction := c.lower_left_corner
+  direction = direction.add(c.horizontal.scalar_mult(s))
+  direction = direction.add(c.vertical.scalar_mult(t))
+  direction = direction.sub(c.origin)
+  direction = direction.sub(offset)
+
   return Ray {
-    A: c.origin,
-    B: c.lower_left_corner.add(c.horizontal.scalar_mult(u)).add(c.vertical.scalar_mult(v)).sub(c.origin),
+    A: c.origin.add(offset),
+    B: direction,
   }
 }
 
-func camera(vfov, aspect float32) Camera {
+func camera(lookfrom, lookat, vup Vec3, vfov, aspect, aperture, focus_dist  float32) Camera {
   theta := float64(vfov * math.Pi / 180.0)
   half_height := float32(math.Tan(theta / 2.0))
   half_width := aspect * half_height
 
-  lower_left_corner := vec3(-half_width, -half_height, -1.0)
-  horizontal := vec3(2.0 * half_width, 0, 0)
-  vertical := vec3(0, 2.0 * half_height, 0.0)
-  origin := vec3(0, 0, 0)
+  origin := lookfrom
+
+  w := lookfrom.sub(lookat).normalize()
+  u := vup.cross(w).normalize()
+  v := w.cross(u)
+
+  lower_left_corner := origin.sub(u.scalar_mult(half_width * focus_dist))
+  lower_left_corner = lower_left_corner.sub(v.scalar_mult(half_height * focus_dist))
+  lower_left_corner = lower_left_corner.sub(w.scalar_mult(focus_dist))
+
+  horizontal := u.scalar_mult(2.0 * half_width * focus_dist)
+  vertical := v.scalar_mult(2.0 * half_height * focus_dist)
 
   return Camera {
     origin,
     lower_left_corner,
     horizontal,
     vertical,
+    u, v, w,
+    aperture / 2.0,
   }
 
 
@@ -404,7 +435,7 @@ func (m Material) scatter(r Ray, rec *HitRecord, attenuation *Vec3, scattered *R
 
 func (v Vec3) reflect(n Vec3) Vec3 {
   if (n.norm() - 1.0 > 0.001) {
-    panic("reflect: norm must be normalized")
+    n = n.normalize()
   }
   return v.sub(n.scalar_mult(2 * v.dot(n)))
 }
@@ -484,15 +515,22 @@ func pos_camera_scene() HitableList {
 
 
 func main() {
-  nx := 200
-  ny := 100
-  ns := 100
+  scale := 0.5
+  nx := int(200 * scale)
+  ny := int(100 * scale)
+  ns := 1
 
   fmt.Print("P3\n", nx, " ", ny, "\n255\n")
 
-  cam := camera(90, float32(nx) / float32(ny))
+  lookfrom := vec3(13, 2, 3)
+  lookat := vec3(0, 0, 0)
+//  focus_dist := lookfrom.sub(lookat).norm()
+  focus_dist := float32(10.0)
+  aperture := float32(0.1)
 
-  world := pos_camera_scene()
+  cam := camera(lookfrom, lookat, vec3(0, 1, 0), 20, float32(nx)/float32(ny), aperture, focus_dist)
+
+  world := random_scene()
 
   for j := ny - 1; j >= 0; j-- {
     for i := 0; i < nx; i++ {
