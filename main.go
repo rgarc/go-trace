@@ -286,6 +286,26 @@ func (c Camera) get_ray(u, v float32) Ray {
   }
 }
 
+func camera(vfov, aspect float32) Camera {
+  theta := float64(vfov * math.Pi / 180.0)
+  half_height := float32(math.Tan(theta / 2.0))
+  half_width := aspect * half_height
+
+  lower_left_corner := vec3(-half_width, -half_height, -1.0)
+  horizontal := vec3(2.0 * half_width, 0, 0)
+  vertical := vec3(0, 2.0 * half_height, 0.0)
+  origin := vec3(0, 0, 0)
+
+  return Camera {
+    origin,
+    lower_left_corner,
+    horizontal,
+    vertical,
+  }
+
+
+}
+
 /* Materials */
 
 type MaterialType int
@@ -454,6 +474,14 @@ func basic_scene() HitableList {
   return world
 }
 
+func pos_camera_scene() HitableList {
+  var world HitableList
+  R := float32(math.Cos(math.Pi/4.0))
+  world = append(world, sphere(vec3(-R, 0, -1), R, lambertian(0, 0, 1)))
+  world = append(world, sphere(vec3(R, 0, -1), R, lambertian(1, 0, 0)))
+  return world
+}
+
 
 func main() {
   nx := 200
@@ -462,19 +490,9 @@ func main() {
 
   fmt.Print("P3\n", nx, " ", ny, "\n255\n")
 
-  lower_left_corner := vec3(-2.0, -1.0, -1.0)
-  horizontal := vec3(4.0, 0.0, 0.0);
-  vertical := vec3(0.0, 2.0, 0.0);
-  origin := vec3(0.0, 0.0, 0.0)
+  cam := camera(90, float32(nx) / float32(ny))
 
-  cam := Camera {
-    origin: origin,
-    lower_left_corner: lower_left_corner,
-    horizontal: horizontal,
-    vertical: vertical,
-  }
-
-  world := basic_scene()
+  world := pos_camera_scene()
 
   for j := ny - 1; j >= 0; j-- {
     for i := 0; i < nx; i++ {
