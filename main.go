@@ -516,10 +516,14 @@ func pos_camera_scene() HitableList {
 
 
 func main() {
-  scale := 2.0
-  nx := int(200 * scale)
-  ny := int(100 * scale)
-  ns := 50
+  scale := 1.0
+  nx := int(1920 * scale)
+  ny := int(1080 * scale)
+  tile_x := 4
+  tile_y := 2
+  tile_w := nx / tile_x
+  tile_h := ny / tile_y
+  ns := 40
 
   fmt.Print("P3\n", nx, " ", ny, "\n255\n")
 
@@ -542,30 +546,34 @@ func main() {
 
   var wg sync.WaitGroup
 
-  wg.Add(ny * nx)
+  wg.Add(tile_x * tile_y)
 
 
-  for j := ny - 1; j >= 0; j-- {
-    for i := 0; i < nx; i++ {
-      go func(i ,j int, buf *[][]Vec3) {
+  for j := 0; j < tile_y; j++ {
+    for i := 0; i < tile_x; i++ {
+      go func(i, j, tile_i ,tile_j int, buf *[][]Vec3) {
         defer wg.Done()
-        col := vec3(0, 0, 0)
+        for y := 0; y < tile_h; y++ {
+          for x := 0; x < tile_w; x++ {
+            col := vec3(0, 0, 0)
 
-        for s := 0; s < ns; s++ {
-          u := (float32(i) + rand.Float32()) / float32(nx);
-          v := (float32(j) + rand.Float32()) / float32(ny);
-          r := cam.get_ray(u, v)
-          col = col.add(color(r, world, 0))
+            for s := 0; s < ns; s++ {
+              u := (float32(i * (tile_i) + x) + rand.Float32()) / float32(nx);
+              v := (float32(j * (tile_j) + y) + rand.Float32()) / float32(ny);
+              r := cam.get_ray(u, v)
+              col = col.add(color(r, world, 0))
+            }
+
+            col = col.scalar_mult(1.0 / float32(ns)).gamma(2.0)
+
+            ir := float32(255.99 * col.x());
+            ig := float32(255.99 * col.y());
+            ib := float32(255.99 * col.z());
+
+            (*buf)[j * (tile_j) + y][i * (tile_i) + x] = vec3(ir, ig, ib)
+          }
         }
-
-        col = col.scalar_mult(1.0 / float32(ns)).gamma(2.0)
-
-        ir := float32(255.99 * col.x());
-        ig := float32(255.99 * col.y());
-        ib := float32(255.99 * col.z());
-
-        (*buf)[j][i] = vec3(ir, ig, ib)
-      }(i, j, &buf)
+      }(i, j, tile_w, tile_h, &buf)
     }
   }
 
