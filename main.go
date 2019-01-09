@@ -1,17 +1,13 @@
 package main
 
 import (
-	"fmt"
+  "fmt"
   "math"
   "math/rand"
   "sync"
 )
 
-/**
-
-  3D Vectors
-
-**/
+/* 3D Vectors */
 
 type Vec3 struct {
   e [3]float32
@@ -117,22 +113,23 @@ func (v Vec3) gamma(g float32) Vec3 {
   )
 }
 
-func color(r Ray, world Hitable, depth int) Vec3 {
-  rec := new_hitrec()
+func (v Vec3) reflect(n Vec3) Vec3 {
+  if (n.norm() - 1.0 > 0.001) {
+    n = n.normalize()
+  }
+  return v.sub(n.scalar_mult(2 * v.dot(n)))
+}
 
-  if world.hit(r, 0.001, math.MaxFloat32, &rec) {
-    scattered := ray(vec3(0, 0, 0), vec3(0, 0, 0))
-    attenuation := vec3(0, 0, 0)
+func (v Vec3) refract(n Vec3, ni_over_nt float32, refracted *Vec3) bool {
+  uv := v.normalize()
+  dt := uv.dot(n)
+  discriminant := float64(1.0 - (ni_over_nt * ni_over_nt) * (1 - dt * dt))
 
-    if (depth < 5 && rec.material.scatter(r, &rec, &attenuation, &scattered)) {
-      return attenuation.prod(color(scattered, world, depth + 1))
-    } else {
-      return vec3(0, 0, 0)
-    }
+  if discriminant > 0 {
+    *refracted = uv.sub(n.scalar_mult(dt)).scalar_mult(ni_over_nt).sub(n.scalar_mult(float32(math.Sqrt(discriminant))))
+    return true
   } else {
-    unit_dir := r.direction().normalize()
-    t := 0.5 * (unit_dir.y() + 1.0)
-    return vec3(1.0, 1.0, 1.0).scalar_mult(1.0 - t).add(vec3(0.5, 0.7, 1.0).scalar_mult(t))
+    return false
   }
 }
 
@@ -142,9 +139,7 @@ func vec3(x, y, z float32) Vec3 {
   }
 }
 
-/**
-  3D Rays
-**/
+/* 3D Rays */
 
 func ray(a, b Vec3) Ray {
   return Ray {
@@ -161,63 +156,8 @@ func (r Ray) point(t float32) Vec3 { return r.origin().add(r.direction().scalar_
 
 type Ray struct { A, B Vec3 }
 
-func hit_sphere(center Vec3, radius float32, r Ray) float32 {
-  oc := r.origin().sub(center)
 
-  a := r.direction().r2()
-  b := 2.0 * oc.dot(r.direction())
-  c := oc.r2() - radius * radius
-  discriminant := b * b - 4 * a * c
-
-  if (discriminant < 0.0) {
-    return -1.0
-  } else {
-    return (-b - float32(math.Sqrt(float64(discriminant)))) / (2.0 * a)
-  }
-}
-
-type HitRecord struct {
-  t float32
-  p, normal Vec3
-  material Material
-}
-
-func new_hitrec() HitRecord {
-  return HitRecord {
-    t: -1.0,
-    p: vec3(0,0,0),
-    normal: vec3(0,0,0),
-    material: Material {
-      mat: NullMaterial,
-      albedo: vec3(0,0,0),
-    },
-  }
-}
-
-/* Hitables */
-
-type Hitable interface {
-  hit(r Ray, t_min, t_max float32, rec *HitRecord) bool
-}
-
-type HitableList []Hitable
-
-func (h HitableList) hit(r Ray, t_min, t_max float32, rec *HitRecord) bool {
-  tmp_rec := new_hitrec()
-  hit_anything := false
-  closest_so_far := t_max
-
-  for i := 0; i < len(h); i++ {
-    if h[i].hit(r, t_min, closest_so_far, &tmp_rec) {
-      hit_anything = true
-      closest_so_far = tmp_rec.t
-      *rec = tmp_rec
-    }
-  }
-  return hit_anything
-}
-
-/** 3D Spheres **/
+/* 3D Spheres */
 
 func sphere(center Vec3, radius float32, mat Material) Sphere {
   return Sphere {
@@ -334,8 +274,118 @@ func camera(lookfrom, lookat, vup Vec3, vfov, aspect, aperture, focus_dist  floa
     u, v, w,
     aperture / 2.0,
   }
+}
 
+func schlick(cosine float32, ref_idx float32) float32 {
+  r0 := (1.0 - ref_idx) / (1.0 + ref_idx)
+  r0 = r0 * r0
+  return r0 + (1.0 - r0) * float32(math.Pow(float64(1.0 - cosine), 5.0))
+}
 
+/* example scenes to render */
+
+func random_scene() HitableList {
+  var world HitableList
+
+  world = append(world, sphere(vec3(0, -1000, 0), 1000, lambertian(0.5, 0.5, 0.5)))
+
+  for a := -11; a < 11; a++ {
+    for b := -11; b < 11; b++ {
+      mat_prob := rand.Float32()
+      center := vec3(float32(a) + 0.9 * rand.Float32(), 0.2, float32(b) + 0.9 * rand.Float32())
+
+      if center.sub(vec3(4, 0.2, 0)).norm() > 0.9 {
+        if mat_prob < 0.8 {
+          world = append(world, sphere(center, 0.2, lambertian(
+            rand.Float32() * rand.Float32(),
+            rand.Float32() * rand.Float32(),
+            rand.Float32() * rand.Float32())))
+        } else if mat_prob < 0.95 {
+          world = append(world, sphere(center, 0.2, metal(
+            0.5 * (1 + rand.Float32()),
+            0.5 * (1 + rand.Float32()),
+            0.5 * (1 + rand.Float32()),
+            0.5 * (1 + rand.Float32()),
+          )))
+        } else {
+          world = append(world, sphere(center, 0.2, dielectric(1.5)))
+        }
+      }
+    }
+  }
+
+  world = append(world, sphere(vec3(0, 1, 0), 1.0, dielectric(1.5)))
+  world = append(world, sphere(vec3(-4, 1, 0), 1.0, lambertian(0.4, 0.2, 0.1)))
+  world = append(world, sphere(vec3(4, 1, 0), 1.0, metal(0.7, 0.6, 0.5, 0.0)))
+  return world
+}
+
+func basic_scene() HitableList {
+  var world HitableList
+  world = append(world, sphere(vec3(0, 0, -1), 0.5, lambertian(0.1, 0.2, 0.5)))
+  world = append(world, sphere(vec3(0, -100.5, -1), 100, lambertian(0.8, 0.8, 0.0)))
+  world = append(world, sphere(vec3(1, 0, -1), 0.5, metal(0.8, 0.6, 0.2, 0.0)))
+  world = append(world, sphere(vec3(-1, 0, -1), 0.5, dielectric(1.5)))
+  world = append(world, sphere(vec3(-1, 0, -1), -0.45, dielectric(1.5)))
+  return world
+}
+
+func pos_camera_scene() HitableList {
+  var world HitableList
+  R := float32(math.Cos(math.Pi/4.0))
+  world = append(world, sphere(vec3(-R, 0, -1), R, lambertian(0, 0, 1)))
+  world = append(world, sphere(vec3(R, 0, -1), R, lambertian(1, 0, 0)))
+  return world
+}
+
+/* main ray-tracing code */
+
+/* Hitables */
+
+type HitRecord struct {
+  t float32
+  p, normal Vec3
+  material Material
+}
+
+type Hitable interface {
+  hit(r Ray, t_min, t_max float32, rec *HitRecord) bool
+}
+
+type HitableList []Hitable
+
+func (h HitableList) hit(r Ray, t_min, t_max float32, rec *HitRecord) bool {
+  tmp_rec := new_hitrec()
+  hit_anything := false
+  closest_so_far := t_max
+
+  for i := 0; i < len(h); i++ {
+    if h[i].hit(r, t_min, closest_so_far, &tmp_rec) {
+      hit_anything = true
+      closest_so_far = tmp_rec.t
+      *rec = tmp_rec
+    }
+  }
+  return hit_anything
+}
+
+func color(r Ray, world Hitable, depth int) Vec3 {
+  rec := new_hitrec()
+
+  if world.hit(r, 0.001, math.MaxFloat32, &rec) {
+    scattered := ray(vec3(0, 0, 0), vec3(0, 0, 0))
+    attenuation := vec3(0, 0, 0)
+
+    if (depth < 5 && rec.material.scatter(r, &rec, &attenuation, &scattered)) {
+      return attenuation.prod(color(scattered, world, depth + 1))
+    } else {
+      return vec3(0, 0, 0)
+    }
+  } else {
+    unit_dir := r.direction().normalize()
+    t := 0.5 * (unit_dir.y() + 1.0)
+    return vec3(1.0, 1.0, 1.0).scalar_mult(1.0 - t).add(vec3(0.5, 0.7, 1.0).scalar_mult(t))
+  }
 }
 
 /* Materials */
@@ -433,87 +483,17 @@ func (m Material) scatter(r Ray, rec *HitRecord, attenuation *Vec3, scattered *R
   }
 }
 
-
-func (v Vec3) reflect(n Vec3) Vec3 {
-  if (n.norm() - 1.0 > 0.001) {
-    n = n.normalize()
-  }
-  return v.sub(n.scalar_mult(2 * v.dot(n)))
-}
-
-func (v Vec3) refract(n Vec3, ni_over_nt float32, refracted *Vec3) bool {
-  uv := v.normalize()
-  dt := uv.dot(n)
-  discriminant := float64(1.0 - (ni_over_nt * ni_over_nt) * (1 - dt * dt))
-
-  if discriminant > 0 {
-    *refracted = uv.sub(n.scalar_mult(dt)).scalar_mult(ni_over_nt).sub(n.scalar_mult(float32(math.Sqrt(discriminant))))
-    return true
-  } else {
-    return false
+func new_hitrec() HitRecord {
+  return HitRecord {
+    t: -1.0,
+    p: vec3(0,0,0),
+    normal: vec3(0,0,0),
+    material: Material {
+      mat: NullMaterial,
+      albedo: vec3(0,0,0),
+    },
   }
 }
-
-func schlick(cosine float32, ref_idx float32) float32 {
-  r0 := (1.0 - ref_idx) / (1.0 + ref_idx)
-  r0 = r0 * r0
-  return r0 + (1.0 - r0) * float32(math.Pow(float64(1.0 - cosine), 5.0))
-}
-
-func random_scene() HitableList {
-  var world HitableList
-
-  world = append(world, sphere(vec3(0, -1000, 0), 1000, lambertian(0.5, 0.5, 0.5)))
-
-  for a := -11; a < 11; a++ {
-    for b := -11; b < 11; b++ {
-      mat_prob := rand.Float32()
-      center := vec3(float32(a) + 0.9 * rand.Float32(), 0.2, float32(b) + 0.9 * rand.Float32())
-
-      if center.sub(vec3(4, 0.2, 0)).norm() > 0.9 {
-        if mat_prob < 0.8 {
-          world = append(world, sphere(center, 0.2, lambertian(
-            rand.Float32() * rand.Float32(),
-            rand.Float32() * rand.Float32(),
-            rand.Float32() * rand.Float32())))
-        } else if mat_prob < 0.95 {
-          world = append(world, sphere(center, 0.2, metal(
-            0.5 * (1 + rand.Float32()),
-            0.5 * (1 + rand.Float32()),
-            0.5 * (1 + rand.Float32()),
-            0.5 * (1 + rand.Float32()),
-          )))
-        } else {
-          world = append(world, sphere(center, 0.2, dielectric(1.5)))
-        }
-      }
-    }
-  }
-
-  world = append(world, sphere(vec3(0, 1, 0), 1.0, dielectric(1.5)))
-  world = append(world, sphere(vec3(-4, 1, 0), 1.0, lambertian(0.4, 0.2, 0.1)))
-  world = append(world, sphere(vec3(4, 1, 0), 1.0, metal(0.7, 0.6, 0.5, 0.0)))
-  return world
-}
-
-func basic_scene() HitableList {
-  var world HitableList
-  world = append(world, sphere(vec3(0, 0, -1), 0.5, lambertian(0.1, 0.2, 0.5)))
-  world = append(world, sphere(vec3(0, -100.5, -1), 100, lambertian(0.8, 0.8, 0.0)))
-  world = append(world, sphere(vec3(1, 0, -1), 0.5, metal(0.8, 0.6, 0.2, 0.0)))
-  world = append(world, sphere(vec3(-1, 0, -1), 0.5, dielectric(1.5)))
-  world = append(world, sphere(vec3(-1, 0, -1), -0.45, dielectric(1.5)))
-  return world
-}
-
-func pos_camera_scene() HitableList {
-  var world HitableList
-  R := float32(math.Cos(math.Pi/4.0))
-  world = append(world, sphere(vec3(-R, 0, -1), R, lambertian(0, 0, 1)))
-  world = append(world, sphere(vec3(R, 0, -1), R, lambertian(1, 0, 0)))
-  return world
-}
-
 
 func main() {
   scale := 1.0
