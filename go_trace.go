@@ -496,7 +496,7 @@ func new_hitrec() HitRecord {
 }
 
 func main() {
-  scale := 1.0
+  scale := 0.4
   nx := int(1920 * scale)
   ny := int(1080 * scale)
   tile_x := 4
